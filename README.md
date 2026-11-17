@@ -11,3 +11,5 @@
         <img src="https://img.shields.io/static/v1?label=DIALX%20Community%20on&message=Discord&color=blue&logo=Discord&style=flat-square" alt="Discord">
     </a>
 </h4>
+
+MCP sign-in gateway for DIAL - an OAuth2 authorization server that establishes a harness user's DIAL MCP toolset credential

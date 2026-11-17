@@ -1,0 +1,8 @@
+[project]
+name = "dial-mcp-gateway"
+version = "0.0.0"
+description = "MCP sign-in gateway for DIAL - an OAuth2 authorization server that establishes a harness user's DIAL MCP toolset credential"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
