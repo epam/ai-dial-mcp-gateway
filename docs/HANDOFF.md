@@ -40,12 +40,12 @@ place and represents a perfectly MCP-compliant AS for any harness. C2 delivered 
 generalized OIDC federation (lived on Entra B2C), C1.5 added **apps with MCP
 endpoints** as sign-in-able resources (credential-free; the flow short-circuits the
 upstream stage by kind), and C2.5 hardened the authorization-server surface per RFC
-9700. The remaining production-readiness items are [`production-roadmap.md`](production-roadmap.md)'s
-C3 and D3.
+9700. The production deployment shape landed in C3; the remaining production-readiness
+item is [`production-roadmap.md`](production-roadmap.md)'s D3.
 
-## Status: the production iteration is through C2.5; the next stage is C3
+## Status: the production iteration is through C3; the next stage is D3
 
-The PoC and the production iteration's first seven stages are archived. Read
+The PoC and the production iteration's stages through C3 are archived. Read
 [`production-roadmap.md`](production-roadmap.md) §"The iteration, packaged and ordered"
 for the authoritative order and each stage's landing note; the short form:
 
@@ -65,12 +65,19 @@ for the authoritative order and each stage's landing note; the short form:
    consent/attribution checkpoint with its per-user approved-client registry, the
    redirect-URI admission rule, revoke-on-double-redemption, and the RFC 9700
    conformance ledger — `docs/threat-model.md` §15, 98 recommendations walked and
-   dispositioned).
+   dispositioned), **C3** (the production deployment shape: the one nginx-plus-gateway
+   pod — `docs/pod-contract.md`, the deployment unit's versioned document — both keysets
+   for signing and custody with active+retained entries and the per-entry env/file key
+   sources, a KMS sign-interface reserved and refused at startup until it lands, the IdP
+   client secret gaining a file-source spelling beside its env spelling, the DCR
+   registration store's durable mount as a named requirement, and the key-rotation drill
+   run live on both keysets).
 
-**Next: C3** — P5 (the nginx+gateway K8s pod) + P1 (the KMS sign-interface; secrets
-out of env) + T3's key-rotation drill, with the DCR registration store's durable mount
-as a named requirement. After it, **D3** — the closing re-judge of every disclosed
-residual.
+**Next: D3** — the closing re-judge of every disclosed residual in the production shape
+(K8s ingress TLS, the KMS key, no HA, real users), with the verdicts written into
+[`docs/threat-model.md`](threat-model.md); anything it reveals as blocking joins the
+iteration's list. **Publication is underway** — the pre-publication cleanup precedes the
+move to the `epam` GitHub organization.
 
 The capability spec is [`openspec/specs/mcp-signin/spec.md`](../openspec/specs/mcp-signin/spec.md)
 — normative, and the thing a behavior change goes through its own OpenSpec change for.
@@ -121,7 +128,7 @@ isolation; DIAL authorization on every call; no credential in logs, argv or erro
 
 1. Read this file, then [`production-roadmap.md`](production-roadmap.md) — the
    authoritative plan is its "The iteration, packaged and ordered" section (the order,
-   each stage's landing note, and the deferred table); the next stage is **C3**.
+   each stage's landing note, and the deferred table); the next stage is **D3**.
 2. For the design background: [`background/design.md`](background/design.md) §1–§2, and
    the archived changes' `evidence/` for every finding and its resolution.
 3. To run the stack locally: [`local-environment.md`](local-environment.md) walks the

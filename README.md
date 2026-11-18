@@ -30,27 +30,34 @@ the token.
 **The gateway's role is wider than toolset sign-in.** As the harness-facing authorization
 server it also absorbs the deployment IdP's MCP incompliances — an IdP that supports no
 CIMD or DCR, or exposes quirky scopes and claims, never reaches the harness: the gateway
-represents a perfectly MCP-compliant AS for the whole harness ecosystem. The next
-iteration widens it further: any platform toolset without per-toolset configuration,
+represents a perfectly MCP-compliant AS for the whole harness ecosystem. That role now
+covers: any platform toolset served without per-toolset configuration (dynamic toolsets),
 federation to any OIDC identity provider (an external customer-identity provider is the
-tested case), and DIAL's
-"apps with MCP endpoints" as sign-in-able resources.
+tested case), and DIAL's "apps with MCP endpoints" as sign-in-able, credential-free
+resources.
 
 ## Status
 
-**The PoC is complete, and both its changes are archived.**
+**The capability is field-proven, and the production-preparation iteration is nearly
+complete.** The build and its first follow-on change are archived:
 `build-mcp-sign-in-gateway-poc` closed all five acceptance criteria on real harnesses
 (Claude Code via CIMD, Cursor via DCR) with the audit trail and Core's logs
-corroborating every step; the successor `fix-dcr-response-conformance` fixed the RFC 7591
+corroborating every step, and `fix-dcr-response-conformance` fixed the RFC 7591
 response conformance Cursor exposed. The capability spec is
 [`openspec/specs/mcp-signin/spec.md`](openspec/specs/mcp-signin/spec.md).
 
-**The next iteration — production preparation — is scoped in
-[`docs/production-roadmap.md`](docs/production-roadmap.md)**: six items (secret
-management, refresh with up-to-date claims, dynamic MCPs, generalized IdP federation
-for external customer-identity providers, the nginx+gateway pod, and the production
-threat model), everything else explicitly
-deferred with reasons.
+**The production-preparation stages have landed**, each an archived change with live
+evidence: dynamic platform toolsets and up-to-date claims at refresh, generalized OIDC
+federation to any identity provider, apps with MCP endpoints as credential-free
+sign-in-able resources, authorization-server hardening against the RFC 9700
+recommendations, and the production deployment shape — the single nginx-plus-gateway pod,
+both signing and custody keysets with env/file key sources (a KMS sign-interface reserved
+as an optional extension), and no secret material in env files. The scope, the order, and
+the deferred items are in [`docs/production-roadmap.md`](docs/production-roadmap.md).
+
+**The one remaining stage is the closing security re-judge (D3):** every disclosed
+residual, re-judged in the production shape, with the verdicts written into
+[`docs/threat-model.md`](docs/threat-model.md).
 
 Read [`docs/HANDOFF.md`](docs/HANDOFF.md) first. Then
 [`docs/production-roadmap.md`](docs/production-roadmap.md) — the iteration's scope.

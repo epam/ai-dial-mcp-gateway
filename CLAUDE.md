@@ -59,11 +59,12 @@
 
 # Publication discipline
 
-- **The fact and the stake.** This repository will be published publicly under the
+- **The fact and the stake.** This repository is published publicly under the
   `epam` GitHub organization as one of the `ai-dial` components. Publication is a
   one-way door: it exposes the full history, and history cannot be recalled. The
-  private GitLab remote is the working remote; the GitHub move happens only after the
-  pre-publication cleanup (D0b in `docs/production-roadmap.md`).
+  internal GitLab remote is the archived private record of the pre-publication
+  history. The standing rules below — prospective-only, placeholders, the machine
+  check — keep applying to every change.
 - **The standing rule — prospective only: no new problematic content.** From D0a on,
   every change adds no new internal hostnames, instance or cluster names, personal
   paths, or real issuer/tenant/org values — in tracked files, docs, evidence, and
