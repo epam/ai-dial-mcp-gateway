@@ -1,0 +1,128 @@
+# Task 8.2 — the compose-boot gate and the full unit suite
+
+Change: `as-security-hardening` (C2.5). Branch `worktree-c2p5-as-security-hardening`,
+HEAD `c1806582d215a6e26ac001adf108b98e25566408`.
+
+Environment: the worktree; Docker in WSL2 driven through the PowerShell tool
+(`wsl -e docker …`), compose project `c2p5-as-security-hardening`; the DIAL instance's
+`dial-instance` stack (core, keycloak, adapters) up beforehand and joined via
+the external `dial-instance_default` network. `PYTHONUTF8=1` for the host
+probes.
+
+## The rebuild (the group-7 lesson: a recreate without a build runs stale code)
+
+The stack was already up with the image built before the gateway code changed, so the
+gateway was **rebuilt first**, then recreated:
+
+    docker compose build mcp-signin-gateway
+    -> ... writing image sha256:7bfb27e8e8d0f9c8b529082baf2f94cce1fb1c2c740895b112813826f2624fd6
+       naming to docker.io/library/dial-mcp-gateway:local
+    -> mcp-signin-gateway  Built                                (exit 0)
+
+    docker compose up -d
+    -> Container ...mcp-signin-gateway-1  Healthy               (exit 0)
+
+The build was **fully cached** (every layer CACHED) — the working tree's source matches
+the image already built from it, so the rebuild confirmed currency rather than changing
+the image. Verified the running container is that exact image:
+
+    docker inspect ...mcp-signin-gateway-1 --format "{{.Image}}"
+    -> sha256:7bfb27e8e8d0f9c8b529082baf2f94cce1fb1c2c740895b112813826f2624fd6
+    docker images dial-mcp-gateway:local --format "{{.ID}}"
+    -> 7bfb27e8e8d0
+
+And verified the container carries this change's code, not stale code:
+
+    docker exec ...mcp-signin-gateway-1 sh -c \
+      "grep -n 'CONSENT_ROUTE' /opt/venv/lib/python3.12/site-packages/gateway/federation.py"
+    -> 69:CONSENT_ROUTE = "/dial/consent"
+    -> 426:@router.post(CONSENT_ROUTE, response_model=None)
+
+The consent route (this change's checkpoint) is present in the running image.
+
+## Per-service health
+
+    docker ps --filter "name=c2p5-as-security-hardening" --format "{{.Names}}\t{{.Status}}"
+    -> c2p5-as-security-hardening-mcp-signin-gateway-1  Up (healthy)
+    -> c2p5-as-security-hardening-mcp-signin-router-1   Up (healthy)
+    -> c2p5-as-security-hardening-mcp-app-fixture-1     Up (healthy)
+
+Every service of the stack is **healthy** (the compose-boot gate's requirement). The
+fixture (`mcp-app-fixture`) is started by this profile-set stack; the instance's core and
+keycloak are reachable on the external network.
+
+## Probe battery (liveness/trust/routing/end-to-end) — all green
+
+The probes need a **slow allowlisted origin** for the liveness row (default allowlist is
+`https://claude.ai`). As group 7 did, a temporary compose override added
+`https://httpbin.org` for that one run, then the gateway was recreated from the committed
+configuration and the allowlist verified back.
+
+### probe_liveness (F1) — PASS
+
+    python scripts/probe_liveness.py --slow-client-id https://httpbin.org/delay/5
+    origin=http://localhost:8090 slow_client_id=https://httpbin.org/delay/5
+    slow_origin_hold=5.0s
+    control /healthz: samples=['0.2030s', '0.0000s', '0.0470s']
+    [PASS] control: worst=0.2030s
+    during the held-open leg: /healthz 200 in 0.0150s
+    [PASS] healthz answers during a slow outbound leg: status=200 duration=0.0150s budget=2.0300s
+    [INFO] the slow leg answered 400 in 11.91s (the fetch was held for ~5.0s)
+    VERDICT: PASS                                              (exit 0)
+
+The held-open leg genuinely held (11.91s) and `/healthz` answered in 0.0150s — the event
+loop stayed free during a slow outbound fetch. Override removed after; the gateway
+recreated from committed config, and `GATEWAY_CIMD_ALLOWED_ORIGINS` verified back at
+`https://claude.ai`.
+
+(Note: an initial liveness run without the override saw the slow leg refuse in 0.05s —
+httpbin is not allowlisted by default, so the held-open leg was not exercised. That run
+is not the gate; the overridden run above is.)
+
+### probe_gateway_trust — green
+
+    python scripts/probe_gateway_trust.py
+    -> published JWKS kid matches the signing key (kid=a119a0a9bee68848)
+    -> negative control: a token signed by an unpublished key -> HTTP 401 (red as required)
+    -> positive control: a gateway-signed token -> Core /v1/user/info HTTP 200, roles=["admin"]
+    -> Core trusts the gateway's key through the gateway's own JWKS endpoint   (exit 0)
+
+### probe_routing — all 11 rows pass
+
+    python scripts/probe_routing.py
+    -> all 11 probes passed                                    (exit 0)
+
+Including the **new** row 7 (this change's checkpoint): *consent action route reachable
+through the front door* — a POST to `/dial/consent` naming an unknown flow is answered by
+the gateway with an HTML page (status 400, `content-type: text/html; charset=utf-8`),
+never Core's 404. The other ten rows (negative control, query-string survival, flat AS
+metadata, per-toolset PRM, data-path 401 rewrite, gateway paths, apps PRM, apps 401
+rewrite, apps query survival, status-path fall-through) all pass.
+
+### probe_end_to_end — green
+
+    python scripts/probe_end_to_end.py
+    -> step 1 discovery, step 2 authorize (302 -> keycloak), step 3 login form submitted
+    -> hop 2: the consent/attribution decision page rendered
+    -> step 4: the decision page (approve) -> HTTP 200, page continues to https://mcp.notion.com/authorize
+    -> boundary: the approve advanced the flow to the upstream authorization page
+    -> EXIT 0
+
+The probe drove the full chain through the checkpoint: the identity leg completed, the
+`/dial/consent` decision page rendered on first attribution, the approve action advanced
+the flow to the upstream authorization page. It stops at the upstream provider's real
+account boundary by design (the checkpoint mechanics are proven; the upstream leg is not).
+
+## Full unit suite — GREEN
+
+    python -m pytest -q
+    -> 675 passed, 1 skipped, 1 warning in 211.41s (0:03:31)    (exit 0)
+
+Recorded counts: **675 passed, 1 skipped** (the standing skip; the 1 warning is the
+pre-existing `StarletteDeprecationWarning` about httpx/testclient).
+
+## Task 8.2 verdict
+
+**Green.** The gateway image rebuilt and verified to carry this change's code (the
+consent route present), every service healthy, the liveness/trust/routing/end-to-end
+probes all passing, and the full suite green at 675 passed / 1 skipped.

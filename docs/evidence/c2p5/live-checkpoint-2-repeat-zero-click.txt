@@ -1,0 +1,6 @@
+  login page rendered at keycloak:8443
+  credential submitted -> HTTP 302
+  hop 1: HTTP 302 -> http://127.0.0.1:8772/callback
+  hop 2: reached the client callback
+  ZERO-PAGE: reached the callback with no page (code <redacted len=1202 sha256=d8a3139af16b>)
+=== result === {'landed': 'callback-zero-page', 'code': '<redacted len=1202 sha256=d8a3139af16b>'}

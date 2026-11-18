@@ -1,0 +1,38 @@
+=== step 1: discovery through the front door ===
+  resource  http://localhost:8090/apps/skills-demo/mcp
+  servers   ["http://localhost:8090"]
+=== step 2: /dial/authorize through the front door ===
+  status    302 -> keycloak:8443
+  client    dial-mcp-proxy
+  scope     profile email
+=== step 3: the identity provider's login form ===
+  credentials submitted -> HTTP 302
+  hop 2: the consent/attribution decision page rendered
+=== step 4: the consent/attribution decision page ===
+  flow      <redacted len=22 sha256=c78efb74e321>
+  action    approve
+  response  HTTP 200
+  page      the mint navigating to the client callback
+  verdict   the approval completed the flow to the mint
+=== step 5: the gateway's callback ===
+  params    ['code', 'iss', 'state']
+  state     round-tripped
+  code      <redacted len=1202 sha256=f03372dc4917>
+=== step 6: /dial/token ===
+  status    200
+  access    <redacted len=953 sha256=44d5c5a58666>
+    iss      "http://localhost:8090"
+    sub      "3a0d60f4-<redacted-subject>"
+    aud      ["http://localhost:8090/apps/skills-demo/mcp", "dial-mcp-proxy"]
+    roles    ["admin"]
+  refresh   present
+  project   "proj-alpha"
+=== step 7: a live tool call through the front door (/apps/skills-demo/mcp) ===
+  status    200
+  tools     1
+  first     ["echo"]
+
+=== smoke verdict ===
+  the sign-in completed through the front door and the token it minted
+  authenticated a live tool call: the deployment is wired end to end
+
