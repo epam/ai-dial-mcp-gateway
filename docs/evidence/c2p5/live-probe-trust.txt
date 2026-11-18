@@ -1,0 +1,24 @@
+=== the published JWKS (through the front door) ===
+  GET http://localhost:8090/dial/jwks.json -> keys=["a119a0a9bee68848"]
+  derived from GATEWAY_SIGNING_KEY -> kid=a119a0a9bee68848
+  verdict: green — the signing key is the published key
+
+=== negative control: a token signed by an unpublished key ===
+  token     <redacted len=1170 sha256=5b2ec9575c70>  kid=0ca3ebeb00c71bf1
+  GET /v1/user/info -> HTTP 401
+  verdict: red as required — an unpublished signer is refused
+
+=== positive control: a token signed with the gateway's key ===
+  token     <redacted len=1170 sha256=046ce60c25e9>  kid=a119a0a9bee68848
+  iss       "http://localhost:8090"
+  aud       ["http://localhost:8090", "dial-mcp-proxy"]
+  sub       "3a0d60f4-<redacted-subject>"
+  GET /v1/user/info -> HTTP 200
+  userId    3a0d60f4-<redacted-subject>
+  roles     ["admin"]
+  verdict: green — Core validated the gateway's own key via the gateway's JWKS
+
+=== probe verdict ===
+  the published kid matches the signing key, the unpublished signer is
+  refused, and a gateway-signed token resolves a real identity:
+  Core trusts the gateway's key through the gateway's own JWKS endpoint

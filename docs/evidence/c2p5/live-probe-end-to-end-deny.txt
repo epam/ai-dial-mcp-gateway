@@ -1,0 +1,19 @@
+=== step 1: discovery through the front door ===
+  resource  http://localhost:8090/apps/skills-demo/mcp
+  servers   ["http://localhost:8090"]
+=== step 2: /dial/authorize through the front door ===
+  status    302 -> keycloak:8443
+  client    dial-mcp-proxy
+  scope     profile email
+=== step 3: the identity provider's login form ===
+  credentials submitted -> HTTP 302
+  hop 2: the consent/attribution decision page rendered
+=== step 4: the consent/attribution decision page ===
+  flow      <redacted len=22 sha256=65e26131ac7a>
+  action    deny
+  response  HTTP 400
+  page      the refusal page — no authorization code was issued
+
+=== deny verdict ===
+  the decision page was refused, the refusal page was served, and
+  no authorization code was issued

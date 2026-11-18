@@ -1,0 +1,119 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dial-mcp-gateway"
+version = "0.0.0"
+description = "MCP sign-in gateway for DIAL — an OAuth2 authorization server that establishes a harness user's DIAL MCP toolset credential"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+dependencies = [
+    "fastapi>=0.144",
+    "uvicorn>=0.54",
+    # The gateway signs its own tokens (RS256), so it needs the crypto extra; it never
+    # verifies an upstream token with a shared secret.
+    "pyjwt[crypto]>=2.15",
+    # Outbound calls (Core's credential API, the client-metadata document fetch) need
+    # timeout and connection-pinning control that a urllib request does not offer.
+    "httpx>=0.28",
+    "pydantic-settings>=2.16",
+    # Transitive via fastapi (`opentelemetry-api>=1.44.0`), but pinned directly as a
+    # floor: 1.45.1 carries CVE-2026-126360 (ReDoS in the trace-context propagator), and
+    # the gateway's blocking pip-audit gate treats a reachable transitive advisory as a
+    # dependency bump's job. The floor clears it and pins the fix in place.
+    "opentelemetry-api>=1.45.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1",
+    # respx intercepts httpx transports, so the outbound legs are tested without a live
+    # Core, identity provider, or upstream MCP server.
+    "respx>=0.23",
+    "ruff>=0.17",
+    "mypy>=2.4",
+    "bandit>=1.9",
+    "pip-audit>=2.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["gateway"]
+
+# ---------------------------------------------------------------- ruff (lint + format)
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["gateway", "tests", "scripts"]
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+# The rule families the repo gates on: correctness and modernization (E/W/F/I/UP/B/C4),
+# security (S — the lint-side counterpart of the bandit gate), and the async/exception
+# and logging mistakes that are silent in production (ASYNC, TRY, LOG, PL, SIM, RUF).
+select = [
+    "ASYNC",
+    "B",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "LOG",
+    "N",
+    "PL",
+    "PT",
+    "RUF",
+    "S",
+    "SIM",
+    "TRY",
+    "UP",
+    "W",
+]
+# Line length is the formatter's job: ruff format wraps code, and prose lines in
+# docstrings and comments are wrapped by hand to the same width, so E501 would only
+# re-report what the formatter already controls.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on behaviour and are allowed to use bare asserts and literal credentials
+# in fixtures; nothing under tests/ ships.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.ruff.format]
+# Defaults match the repo's existing wrapping width; stated explicitly so the format
+# gate cannot drift with a toolchain default.
+line-ending = "lf"
+
+# ---------------------------------------------------------------- mypy
+
+[tool.mypy]
+python_version = "3.12"
+# The shipped package and its tests are fully typed and held to strict; the one-off
+# spike instruments under scripts/ are interactive helpers, not shipped code, and are
+# not in `files`.
+strict = true
+files = ["gateway", "tests"]
+warn_unreachable = true
+# Without the plugin, mypy reports every model construction as a call-arg error: it
+# cannot see that `BaseSettings` accepts the `_env_file` keyword or that a field with no
+# default would receive its value from the environment.
+plugins = ["pydantic.mypy"]
+
+# ---------------------------------------------------------------- bandit
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+# No skip list: the gateway's whole job is handling credentials, so a bandit finding
+# here is a real finding and is triaged rather than silenced by configuration.
+
+# ---------------------------------------------------------------- pytest
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The package is imported from the repository root, so no editable install is needed to
+# run the suite.
+pythonpath = ["."]

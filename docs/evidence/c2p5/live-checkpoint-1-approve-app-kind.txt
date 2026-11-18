@@ -1,0 +1,11 @@
+  login page rendered at keycloak:8443
+  credential submitted -> HTTP 302
+  hop 1: HTTP 200 -> <none>
+  DECISION PAGE rendered; it showed:
+    flow_id = iVHkJz5_UdbrgrMSXnN9ng
+    client_shown = CM9ZB9rDYcDdndm-PqNE9w
+    resource_shown = skills-demo
+    redirect_uri_shown = http://127.0.0.1:8772/callback
+  consent POST action=approve -> HTTP 302 location=http://127.0.0.1:8772/callback
+  approve minted a code to the callback (<redacted len=1202 sha256=77b9277919a8>)
+=== result === {'landed': 'decision-page', 'facts': {'flow_id': 'iVHkJz5_UdbrgrMSXnN9ng', 'client_shown': 'CM9ZB9rDYcDdndm-PqNE9w', 'resource_shown': 'skills-demo', 'redirect_uri_shown': 'http://127.0.0.1:8772/callback'}, 'decision_page_text': 'Approve cp-approve2 Approve access for cp-approve2? cp-approve2 (client id CM9ZB9rDYcDdndm-PqNE9w ) is asking to use the DIAL app skills-demo as you. If you approve, the sign-in code will be delivered to http://127.0.0.1:8772/callback . This is the first time this client has asked. Approving records your decision for this client, so future sign-ins from it will not ask again. Approve Deny', 'consent_status': 302, 'consent_location': 'http://127.0.0.1:8772/callback', 'code': '<redacted len=1202 sha256=77b9277919a8>', 'mint_location_path': 'http://127.0.0.1:8772/callback'}

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hosting the MCP Sign-In Gateway</title>
+<style>
+  /* Same visual family as docs/demo-slide.html: deep-ink navy, cyan control accent,
+     green data/ok, amber credential. Deliberately single dark theme (demo slide). */
+  :root {
+    --bg: #0b1220;
+    --panel: #121d31;
+    --panel-edge: #23334f;
+    --ink: #e8eef7;
+    --muted: #93a4bc;
+    --control: #4fc3f7;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+    padding-block: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    color: var(--ink);
+    font: 14.5px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; font-size: clamp(22px, 3vw, 30px); font-weight: 750; letter-spacing: -0.02em; }
+  h1 .accent { color: var(--control); }
+  .context {
+    margin: 0; color: var(--muted); font-size: 13.5px; max-width: 70rem;
+  }
+  .context strong { color: var(--ink); font-weight: 600; }
+
+  .options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (min-width: 1150px) { .options { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 760px) { .options { grid-template-columns: 1fr; } }
+  .option {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .option.now { border-color: var(--ok); }
+  .option.core { border-color: var(--control); }
+  .option.kc { border-color: var(--panel-edge); }
+  .option.chat .tag { color: var(--warn); border-color: var(--warn); }
+  .option h2 {
+    margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .tag {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 99px; border: 1px solid; flex: none;
+  }
+  .now .tag { color: var(--ok); border-color: var(--ok); }
+  .core .tag { color: var(--control); border-color: var(--control); }
+  .kc .tag { color: var(--muted); border-color: var(--muted); }
+  .option .one { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+  ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+  li { display: flex; gap: 7px; align-items: flex-start; }
+  li .mark { flex: none; width: 14px; text-align: center; font-weight: 800; }
+  li.pro .mark { color: var(--ok); }
+  li.con .mark { color: var(--warn); }
+  li.pro { color: var(--ink); }
+  li.con { color: var(--muted); }
+  .verdict {
+    margin-top: auto; padding-top: 9px; border-top: 1px solid var(--panel-edge);
+    font-size: 12.5px; color: var(--ink);
+  }
+  .verdict b { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--control); display: block; margin-bottom: 2px; }
+
+  .bottom {
+    background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 12px;
+    padding: 12px 16px; font-size: 13.5px; color: var(--muted);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .bottom b { color: var(--ink); }
+  .bottom .rec { color: var(--ink); }
+  .bottom .rec .accent { color: var(--control); font-weight: 650; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Hosting the Sign-In Flow — <span class="accent">three options</span></h1>
+  <p class="context"><strong>What must hold in every option</strong> (the MCP conformance frame):
+  the upstream token and PKCE verifier never leave the credential holder; per-user credential
+  isolation; the harness speaks only standard OAuth2/MCP; DIAL authorization applies to every call.
+  The options differ in <strong>where the sign-in orchestration lives</strong> — and therefore in trust
+  boundaries, release cadence, and product alignment.</p>
+
+  <div class="options">
+    <div class="option now">
+      <h2>Separate service <span class="tag">as-is · proven</span></h2>
+      <p class="one">A small OAuth2 AS + federation orchestrator beside the front door; Core trusts it as an extra identity provider (config-only).</p>
+      <ul>
+        <li class="pro"><span class="mark">+</span><span>Zero Core changes — works on today's Core, adoptable by any deployment by config; already field-proven on real harnesses</span></li>
+        <li class="pro"><span class="mark">+</span><span>Small, single-purpose, fully threat-modeled trust surface; independent release cadence</span></li>
+        <li class="pro"><span class="mark">+</span><span>IdP-agnostic and Core-version-agnostic; the executable spec for any future Core-native work</span></li>
+        <li class="con"><span class="mark">−</span><span>One more always-on component (a signed-off deviation) and a Tier-0 signing key outside Core's custody</span></li>
+        <li class="con"><span class="mark">−</span><span>Per-toolset audience binding is structurally unavailable; a leaked token is valid deployment-wide for its lifetime</span></li>
+        <li class="con"><span class="mark">−</span><span>The 401-challenge rewrite lives in the router — a workaround for Core's own inverted challenge</span></li>
+      </ul>
+      <div class="verdict"><b>Choose when</b>deploying now, on unmodified Core, without waiting for a product release.</div>
+    </div>
+
+    <div class="option core">
+      <h2>Inside DIAL Core <span class="tag">strategic</span></h2>
+      <p class="one">Core natively answers the sign-in: its own OAuth surface per toolset, federation built in, tokens minted by Core itself.</p>
+      <ul>
+        <li class="pro"><span class="mark">+</span><span>One component; the extra-IdP machinery and the second Tier-0 key disappear — Core's own token custody covers it</span></li>
+        <li class="pro"><span class="mark">+</span><span>The no-credential 401 is answered at the source (the router workaround retires) and per-toolset audience binding becomes possible</span></li>
+        <li class="pro"><span class="mark">+</span><span>Product-aligned: every DIAL deployment gets it; the PoC's design, threat model, and harness measurements are the spec</span></li>
+        <li class="con"><span class="mark">−</span><span>A Core code change (Java port of AS + federation + SSRF controls) on Core's release cycle — the PoC exists because waiting was not viable</span></li>
+        <li class="con"><span class="mark">−</span><span>The public OAuth surface moves INSIDE the credential holder — a Core flaw's blast radius grows to every stored credential; the hardening bar rises</span></li>
+        <li class="con"><span class="mark">−</span><span>Deployments on older Core versions still need the external gateway as a bridge</span></li>
+      </ul>
+      <div class="verdict"><b>Choose when</b>the capability should ship with DIAL itself; use the gateway as the bridge and the specification until then.</div>
+    </div>
+
+    <div class="option kc">
+      <h2>Keycloak extension <span class="tag">IdP-bound</span></h2>
+      <p class="one">The harness does OAuth against Keycloak directly; a custom extension orchestrates the upstream consent mid-login and hands Core the code.</p>
+      <ul>
+        <li class="pro"><span class="mark">+</span><span>The harness token IS a Keycloak token — Core needs no extra IdP entry, same trust simplification as the Core option</span></li>
+        <li class="pro"><span class="mark">+</span><span>SSO, session and consent management are native; no separate AS to build or operate</span></li>
+        <li class="con"><span class="mark">−</span><span>Deep SPI surgery: a mid-login browser redirect to the upstream and back is outside Keycloak's extension model; the broker's challenge/client semantics do not match Core's verifier binding</span></li>
+        <li class="con"><span class="mark">−</span><span>Couples the IdP to MCP concepts and ties the solution to Keycloak specifically — the design is otherwise IdP-agnostic</span></li>
+        <li class="con"><span class="mark">−</span><span>Same release-cadence and upgrade-fragility problems as the Core option, in a less standard extension surface; still needs the upstream client re-registration story</span></li>
+      </ul>
+      <div class="verdict"><b>Choose when</b>Keycloak is guaranteed forever, the deployment owns its realm config, and the verifier-binding obstacle is solved — otherwise it inherits the Core option's costs with a narrower future.</div>
+    </div>
+
+    <div class="option chat">
+      <h2>DIAL Chat <span class="tag">fails the premise</span></h2>
+      <p class="one">Chat hosts the harness-facing sign-in: its existing DIAL session is the identity leg, and its toolset sign-in UX already drives the upstream consent.</p>
+      <ul>
+        <li class="pro"><span class="mark">+</span><span>The most silent flow of all options — the user's DIAL session is already there; no identity round-trip at all</span></li>
+        <li class="pro"><span class="mark">+</span><span>The sign-in UX already exists (Chat drives the same consent + /signin choreography today); no new component</span></li>
+        <li class="con"><span class="mark">−</span><span>FAILS THE PREMISE: the project exists for deployments where Chat is NOT installed — hosting here makes Chat mandatory again</span></li>
+        <li class="con"><span class="mark">−</span><span>A Tier-0 signing key inside a user-facing frontend product — the weakest custody of any option</span></li>
+        <li class="con"><span class="mark">−</span><span>Couples the flow to one chat frontend; the DIAL ecosystem has several, and the harness-facing AS is backend work in a UI product</span></li>
+      </ul>
+      <div class="verdict"><b>Verdict</b>dominated: where Chat exists its own flow already works; where it doesn't, this option can't help. Keep Chat as a consumer of the same credential store, not the host.</div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <span class="rec"><b>Recommendation:</b> <span class="accent">ship the separate service now</span> (proven, config-only), and take the Core-native sign-in AS upstream as the strategic direction — the gateway is its executable specification and remains the bridge for deployments on older Cores. The Keycloak extension is worth revisiting only with Keycloak guaranteed and the verifier-binding obstacle solved.</span>
+    <span><b>Shared regardless:</b> MCP authorization conformance, credential containment, per-user isolation, and the audit trail are properties of the design, not of the hosting — they port to whichever option wins.</span>
+    <span><b>The widening use case:</b> with this gateway as the harness-facing AS, the deployment's IdP no longer needs any MCP compliance — the gateway consumes its incompliances (no CIMD/DCR, quirky claims/scopes) and represents a perfectly MCP-compliant AS for the whole harness ecosystem, for toolsets and for apps with MCP endpoints alike. Whoever hosts the flow hosts the deployment's entire harness-authN path — which raises the bar on HA and key custody for every option.</span>
+  </div>
+</div>
+</body>
+</html>

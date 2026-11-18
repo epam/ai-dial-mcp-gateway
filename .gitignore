@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Credentials and local state — never commit
+.env
+*.jwt
+*jwt.txt
+admin_jwt.txt
+dcr_client.json
+*_token.json
+*-token-cache.json
+
+# Secrets and keys
+*.pem
+*.key
+!*.pub
+jwks-private*
+.secrets/
+
+# Containers and local runs
+core-logs/
+security-runs/
+*.log
+decoy_capture.log
+
+# The DCR registration store: this host directory is the gateway's compose bind mount,
+# and its contents are local runtime state (registered client ids and redirect URIs),
+# not repository content. The directory itself is kept so the mount point exists.
+data/*
+!data/.gitkeep
+
+# Editors / OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

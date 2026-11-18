@@ -1,0 +1,143 @@
+# Task 8.1 — the static gate tier, every item, findings triaged
+
+Change: `as-security-hardening` (C2.5). Branch `worktree-c2p5-as-security-hardening`,
+HEAD `c1806582d215a6e26ac001adf108b98e25566408`; changed-file scope is the diff against
+the merge-base with `master` (`f19dcfb89c844a74e356714feaf2fbc5cf6885bd`).
+
+Environment: the worktree; the main checkout's venv (`<repo>\.venv\Scripts` — the venv
+lives in the main checkout, not the worktree), `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8`.
+Python 3.12.13, ruff 0.17.1, mypy 2.4.0.
+
+Files this change touched (non-archive, vs merge-base): 30 `.py` files —
+`gateway/{audit,authorize,cimd,discovery,federation,flow,pages,redirect_uris,routes,runtime,settings,state,store,token,tokens}.py`,
+`scripts/{probe_end_to_end,probe_end_to_end_interactive,probe_routing}.py`,
+`tests/{conftest,test_app,test_audit,test_authorize,test_cimd,test_custody,test_discovery,test_federation,test_limits,test_settings,test_store,test_tokens}.py`
+— plus non-Python: `.env.example`, `docker-compose.yml` (unchanged this change),
+`router/nginx.conf`, `docs/*.md`, and the openspec change folder.
+
+## ruff check — GREEN
+
+    ruff check .
+    -> All checks passed!                                          (exit 0)
+
+Tree-wide, no findings, no triage needed.
+
+## ruff format --check — touched files CLEAN under LF normalization
+
+Tree-wide `ruff format --check .` is RED for the documented CRLF checkout quirk (this
+checkout materializes every file CRLF under `core.autocrlf=true`, while the committed
+config pins `line-ending = "lf"`). The verified triage method — the LF-normalized stdin
+form — was run over **every `.py` file this change touched** (all 30):
+
+    sed 's/\r$//' <file> | ruff format --check --stdin-filename <file> -
+
+Result: **30 files checked, 0 drifted** (each individually CLEAN). The tree-wide red
+therefore includes no file this change touched — it is the pre-existing untouched
+remainder, the documented quirk.
+
+## mypy — 2 errors, both PRE-EXISTING and in UNTOUCHED files (note, not a gate break)
+
+    mypy
+    -> tests\test_leak_check.py:20: error: Cannot find implementation or library stub
+       for module named "check_publication_leaks"  [import-not-found]
+    -> tests\test_idp.py:1305: error: Argument 1 to "code_challenge_for" has
+       incompatible type "str | None"; expected "str"  [arg-type]
+    -> Found 2 errors in 2 files (checked 42 source files)         (exit 1)
+
+Triage: **pre-existing and untouched by this change.**
+
+- Neither `tests/test_idp.py` nor `tests/test_leak_check.py` appears in this change's
+  diff (`git diff --stat <merge-base>..HEAD -- tests/test_idp.py tests/test_leak_check.py`
+  is empty).
+- Both files were last modified by commit `210d3eb` ("fix: the flow's availability oracle
+  becomes the deployment-listing read — C2 task group 8"), which is an ancestor of the
+  merge-base `f19dcfb` — i.e. the errors predate this change's branch entirely.
+- Both are pre-existing on `master` in the same shape.
+
+Pre-existing-and-untouched is a **note**, not a gate break: this change introduces no new
+mypy error.
+
+## bandit — GREEN on gateway/; scripts/ findings all PRE-EXISTING and untouched
+
+    bandit -c pyproject.toml -r gateway/
+    -> No issues identified.  (7207 LOC, 0 skipped, 9 #nosec-disabled)   (exit 0)
+
+**gateway/ is clean** — the shipped package, the change's whole surface, carries zero
+findings.
+
+    bandit -c pyproject.toml -r scripts/
+    -> 12 findings: 8 LOW, 4 MEDIUM, 0 HIGH                      (exit 1)
+
+Triaged per file. Two of the flagged files are touched by this change; the other four are
+not:
+
+| File | Findings | Touched by this change? | Triage |
+|---|---|---|---|
+| `scripts/probe_end_to_end_interactive.py` | B310 MEDIUM (line 616) | yes | **pre-existing line** — the finding is in `_browser_get`, an unchanged helper; this change's diff adds a docstring paragraph and a consent-boundary branch in `harvest_callback`, not this call. The `# noqa: S310` is already present. Not newly introduced. |
+| `scripts/probe_routing.py` | B310 MEDIUM (290), B404/B603/B607 LOW (54, 310) | yes | **pre-existing lines** — all four sit in the `fetch` helper (290) and the `docker_args`/import region (54, 310), unchanged by this change; the diff adds `probe_consent_route` and the docstring renumber. None newly introduced. |
+| `scripts/probe_liveness.py` | B310 MEDIUM | no | pre-existing, untouched |
+| `scripts/spike_env.py` | B310 MEDIUM | no | pre-existing, untouched |
+| `scripts/check_publication_leaks.py` | B404/B105/B607/B603 LOW | no | pre-existing, untouched |
+| `scripts/probe_dcr.py` | B105 LOW | no | pre-existing, untouched |
+
+**No finding is newly introduced by this change.** Every flagged line in the two touched
+scripts is in a pre-existing, unchanged helper; the change's own additions carry no bandit
+finding. The set matches the pre-existing triaged class recorded in prior gate evidence
+(same host-run helper scripts).
+
+## pip-audit — GREEN (BLOCKING gate, ran live)
+
+    python -m pip_audit
+    -> No known vulnerabilities found
+    -> dial-mcp-gateway  Dependency not found on PyPI ... (the normal local-package skip)
+                                                                     (exit 0)
+
+No known vulnerabilities. The scanner ran live (pip-audit queries the PyPI advisory API
+directly — no local DB to go stale, so no "stale scanner" caveat applies). The local
+project itself is the standard skip ("Dependency not found on PyPI"); every third-party
+dependency was audited. **No dependency bump needed.**
+
+## Trivy — via WSL, cached DB; findings triaged (class unchanged)
+
+    wsl -e trivy fs --skip-db-update --scanners vuln,secret,misconfig .
+                                                                     (scan completed)
+
+Trivy 0.71.2, cached DB (`--skip-db-update`, freshness not re-verified — recorded as
+such). Outcomes, triaged:
+
+- **Vulnerabilities: none.** Trivy found **no language-specific lockfile to scan**
+  ("Number of language-specific files num=0") — the repo pins dependencies in
+  `pyproject.toml` without a lockfile, which Trivy's vuln scanner does not consume. The
+  dependency-vulnerability verdict therefore rests on **pip-audit above** (the blocking
+  gate, which ran live). Recorded as the division of labor, not as a Trivy green.
+- **Misconfigurations: 1 LOW** — `DS-0026` (no `HEALTHCHECK` instruction in the
+  Dockerfile). **Pre-existing, untouched by this change**; the compose-level healthchecks
+  (which the 8.2 gate exercises) are the operative liveness mechanism.
+- **Secrets: 2 in `.env`** — a cloud-IdP client-secret rule hit (CRITICAL) and
+  `AsymmetricPrivateKey` (HIGH). Triaged as **true positives by design, not exposures**:
+  `.env` is the gitignored local configuration file (verified: `git check-ignore -v .env`
+  -> `.gitignore:12`), holding the self-generated local signing key and the local IdP
+  client secret exactly where the credentials rule says they must live. `.env` is not
+  tracked. The gate over tracked content is the publication leak check below, which
+  passes. No secret material is committed or introduced by this change.
+
+## Publication leak check — PASS
+
+    python scripts/check_publication_leaks.py
+    -> scanned 262 tracked files; 3 finding(s): 3 waived, 0 unwaived
+    -> verdict: PASS                                                   (exit 0)
+
+The 3 findings are all pre-existing, under recorded waivers
+(`docs/evidence/d0a/review-round-1.md` ×2, `scripts/import_background.py` ×1). **No new
+unwaived finding** — none of the files this change touched (code, docs, evidence, or
+test) introduces an internal hostname, personal path, or real issuer/tenant/org value.
+
+## Task 8.1 verdict
+
+**The static tier is green with findings triaged.** Every item ran and is recorded as it
+ran. The one red encountered (tree-wide `ruff format --check`) is the documented CRLF
+checkout quirk, verified not to include a touched file. mypy's 2 errors are pre-existing
+and in untouched files (a note, not a break). bandit is clean on `gateway/`; its
+`scripts/` findings are pre-existing and untouched, none newly introduced. pip-audit
+(BLOCKING) is green. Trivy's secret findings are the gitignored `.env` by design.
+Publication leak check passes with only waived findings.

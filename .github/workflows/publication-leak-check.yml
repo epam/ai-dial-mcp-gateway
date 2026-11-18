@@ -1,0 +1,26 @@
+# The repo's publication-leak gate is otherwise run repo-locally; this carries it into
+# the public CI, which the reusable family workflow does not cover.
+name: Publication leak check
+
+on:
+  pull_request:
+    branches: [development, release-*]
+  push:
+    branches: [development, release-*]
+
+permissions:
+  contents: read
+
+jobs:
+  publication-leak-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Check for publication leaks
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+        run: python scripts/check_publication_leaks.py

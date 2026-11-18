@@ -1,0 +1,352 @@
+# The gateway and its front router, deployed beside a DIAL instance, plus the test fixture
+# an app resource points at.
+#
+# The instance's own compose defines Core and Keycloak; this file adds the services this
+# repository owns and joins their network as external, so nothing here depends on the
+# instance repository's contents — only on its service names (`core:8080`,
+# `keycloak`) being reachable on that network.
+
+services:
+
+  # A minimal MCP-speaking upstream, so an app resource has an MCP endpoint Core can reach
+  # for the apps acceptance run. It is a **test fixture**, not a production service: it
+  # speaks just enough of the MCP initialize/tools handshake to complete a session, holds no
+  # credential, and answers any caller. It exists because no app resource with an `mcp` block
+  # exists in this repository's local environment, and Core's app MCP proxy refuses an
+  # application whose `mcp` block is null — so the acceptance run has nothing to point at
+  # until a fixture like this is registered (see `scripts/spike_register_app.py`).
+  #
+  # It is reachable by Core by service name (`http://mcp-app-fixture:9000/mcp`) on the
+  # instance network, and attaches no stored credential on the app MCP upstream leg — the
+  # injector sends the app id and optional header config only — which is what keeps the
+  # acceptance hermetic: a keyless fixture needs no operator-provisioned secret.
+  #
+  # **Gated behind the `acceptance` profile.** It is a test fixture, not a production
+  # service, so a plain `docker compose up -d` must not start it: the deployment stack is
+  # the gateway and its front router alone, and a fixture answering any caller has no place
+  # running in a deployment that never runs the acceptance. The registration script and the
+  # acceptance run bring it up with `--profile acceptance`, and the compose-boot gate probes
+  # it under that profile.
+  mcp-app-fixture:
+    profiles: ["acceptance"]
+    image: node:22-alpine
+    # A tiny inline MCP server, written here so the fixture is one auditable file with no
+    # build step and no external dependency beyond Node's own http module. It answers the
+    # MCP streamable-HTTP handshake (`initialize`, `tools/list`) over POST and echoes the
+    # request's `?sessionId=` when one is present, so a routing probe can see the query
+    # string survive the front door.
+    command:
+      - node
+      - -e
+      - |
+        const http = require("http");
+        const server = http.createServer((req, res) => {
+          const url = new URL(req.url, "http://localhost");
+          let body = "";
+          req.on("data", (chunk) => { body += chunk; });
+          req.on("end", () => {
+            let parsed = {};
+            try { parsed = JSON.parse(body || "{}"); } catch (e) { parsed = {}; }
+            const method = parsed.method || "";
+            let result;
+            if (method === "initialize") {
+              result = {
+                protocolVersion: "2025-06-18",
+                capabilities: { tools: {} },
+                serverInfo: { name: "mcp-app-fixture", version: "0.1.0" },
+              };
+            } else if (method === "tools/list") {
+              result = { tools: [{ name: "echo", description: "Echo a value back",
+                inputSchema: { type: "object" } }] };
+            } else {
+              result = { sessionId: url.searchParams.get("sessionId") };
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ jsonrpc: "2.0", id: parsed.id ?? null, result }));
+          });
+        });
+        server.listen(9000, "0.0.0.0");
+    networks:
+      - instance
+    # No `ports:` mapping: the fixture is reached by Core inside the instance network, so
+    # nothing about it is published to the host. A host check reaches it through the router
+    # (or `wsl -e docker compose exec`), never a host port.
+    healthcheck:
+      # A liveness probe so the compose-boot gate sees a healthy fixture, like every other
+      # service. Node is used rather than wget because the probe must not depend on a
+      # package the fixture image happens to ship; a POST of no MCP method answers 200.
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          require("http").request(
+            { host: "127.0.0.1", port: 9000, path: "/mcp", method: "POST",
+              headers: { "Content-Type": "application/json" } },
+            (res) => process.exit(res.statusCode === 200 ? 0 : 1),
+          ).on("error", () => process.exit(1)).end("{}");
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # The OAuth2 authorization server, and the namespace-owning service of the pod shape.
+  #
+  # **This service publishes only the pod's public port (8090), never its own 8091.** The
+  # gateway decides which client address a rate limit counts against by reading the
+  # router's forwarded header, and it treats that value as established by the router — the
+  # router sets it from the peer it accepted, so a client cannot choose it while its
+  # traffic passes through the router at all. Publishing 8091 to the host would admit
+  # requests the router never touched, carrying a caller-chosen address, and the
+  # per-source bound would then be a bound the caller sets. What keeps the port
+  # unreachable from the host and from outside networks is the pod shape: the router
+  # shares this service's network namespace
+  # (`network_mode: "service:mcp-signin-gateway"` below), so 8091 is reachable on the
+  # pod's loopback and unpublished outside the pod. The port is, by design, still name-
+  # routable on the deployment's own instance network (`mcp-signin-gateway:8091`) — Core
+  # fetches the gateway's JWKS there, and that network is the deployment's own trust
+  # domain, never the host or the outside. This is a property of this file, not a
+  # deployment detail, and a pod spec that publishes 8091 or exposes it on the pod's
+  # external interface breaks the trust basis the per-source limit rests on (the
+  # mis-assembly shape the threat model prices). The compose-boot health probe reaches
+  # 8091 from inside the container, and `probe_liveness.py` crosses the router, so
+  # nothing here needs a 8091 mapping either.
+  #
+  # The published public port belongs here, on the namespace-owning service, because
+  # publishing a port in a shared-namespace pair publishes the namespace: compose cannot
+  # attach `ports:` to the router (the service that does not own the namespace) for that
+  # leg. `GATEWAY_PUBLIC_ORIGIN` names the value the host sees.
+  mcp-signin-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dial-mcp-gateway:local
+    ports:
+      - "8090:8090"
+    environment:
+      # Settings are listed one by one rather than pulled in with `env_file: .env`.
+      #
+      # The local `.env` is shared with the spike and provisioning helpers, so it also
+      # carries the Keycloak admin credential and the test user's password. Those belong
+      # to a helper running on the host, not to this container: the gateway is the one
+      # component with a public surface, and handing it a realm-admin credential would
+      # make that credential reachable by anything that compromises it.
+      #
+      # Compose still reads `.env` for the `${...}` values below; the difference is that
+      # only what is named here enters the container. The defaults mirror the settings
+      # model, so the file works against a bare `.env.example` copy.
+
+      # Topology. The container-internal values here are the ones a host-oriented `.env`
+      # cannot supply: inside the compose network the instance's services are reached by
+      # name, on their internal ports.
+      GATEWAY_PUBLIC_ORIGIN: ${GATEWAY_PUBLIC_ORIGIN:-http://localhost:8090}
+      GATEWAY_INTERNAL_PORT: ${GATEWAY_INTERNAL_PORT:-8091}
+      DIAL_CORE_BASE_URL: http://core:8080
+      DIAL_COMPOSE_NETWORK: ${DIAL_COMPOSE_NETWORK:-dial-instance_default}
+
+      # The identity provider (the federation profile). The gateway is provider-neutral;
+      # the client id names the confidential client `scripts/provision_keycloak.py`
+      # registers in the local realm (its secret converges to the local profile's
+      # IDP_CLIENT_SECRET), and the scopes are
+      # that client's own defaults and the only scopes either leg requests — never
+      # `offline_access` (the gateway carries only the session-bound refresh token the
+      # exchange issues, requesting no beyond-session grant). The issuer's fallback here
+      # is the placeholder, not any provider's address: a deployment that never set the
+      # value fails loudly at the identity leg. The local deployment's real values live
+      # in `.env` — see docs/local-environment.md.
+      IDP_ISSUER: ${IDP_ISSUER:-https://idp.example.com/}
+      IDP_BACKCHANNEL_BASE_URL: ${IDP_BACKCHANNEL_BASE_URL:-}
+      IDP_CLIENT_ID: ${IDP_CLIENT_ID:-dial-mcp-proxy}
+      IDP_CLIENT_SECRET: ${IDP_CLIENT_SECRET:-}
+      IDP_CLIENT_SCOPES: ${IDP_CLIENT_SCOPES:-profile,email}
+
+      # The identity leg's mode settings. PKCE is on by default — off only for a
+      # provider that cannot support it. IDP_CLIENT_SECRET is required either way:
+      # the gateway's confidential client authenticates every identity-leg token
+      # request with it, and the toggle governs the challenge only.
+      # The TTL bounds how long a provider's endpoint change can go unnoticed in
+      # discovery mode. The direct endpoint trio is all-or-nothing: where all three are
+      # set no discovery fetch is attempted, and an empty set (the default) means
+      # discovery from IDP_ISSUER.
+      IDP_PKCE_ENABLED: ${IDP_PKCE_ENABLED:-true}
+      IDP_DISCOVERY_CACHE_TTL_SECONDS: ${IDP_DISCOVERY_CACHE_TTL_SECONDS:-300}
+      IDP_AUTHORIZATION_ENDPOINT: ${IDP_AUTHORIZATION_ENDPOINT:-}
+      IDP_TOKEN_ENDPOINT: ${IDP_TOKEN_ENDPOINT:-}
+      IDP_JWKS_URI: ${IDP_JWKS_URI:-}
+
+      # Token lifetimes. The declared identity-provider session bound is required — the
+      # model has no default for it, and startup refuses to run without it.
+      GATEWAY_ACCESS_TOKEN_TTL_SECONDS: ${GATEWAY_ACCESS_TOKEN_TTL_SECONDS:-600}
+      GATEWAY_CODE_TTL_SECONDS: ${GATEWAY_CODE_TTL_SECONDS:-300}
+      GATEWAY_FLOW_TTL_SECONDS: ${GATEWAY_FLOW_TTL_SECONDS:-600}
+      GATEWAY_REFRESH_TTL_SECONDS: ${GATEWAY_REFRESH_TTL_SECONDS:-28800}
+      IDP_SSO_SESSION_MAX_SECONDS: ${IDP_SSO_SESSION_MAX_SECONDS:-86400}
+      GATEWAY_ROTATE_REFRESH_TOKENS: ${GATEWAY_ROTATE_REFRESH_TOKENS:-true}
+      GATEWAY_ROTATION_GRACE_SECONDS: ${GATEWAY_ROTATION_GRACE_SECONDS:-60}
+      GATEWAY_INFER_RESOURCE_SINGLE_TOOLSET: ${GATEWAY_INFER_RESOURCE_SINGLE_TOOLSET:-false}
+      # Generous on purpose: the flow's credential call reaches the upstream
+      # authorization server through Core before Core answers, so a short timeout there
+      # surfaces as a failed sign-in rather than as a slow one.
+      GATEWAY_OUTBOUND_TIMEOUT_SECONDS: ${GATEWAY_OUTBOUND_TIMEOUT_SECONDS:-30}
+      GATEWAY_AUDIENCE_MARKER: ${GATEWAY_AUDIENCE_MARKER:-dial-mcp-proxy}
+      ROLES_SOURCE_PATH: ${ROLES_SOURCE_PATH:-roles}
+      # The claim name the roles array is re-emitted under. The other half of the same
+      # deployment fact as the source path: Core's provider entry reads roles from this
+      # name, and a mismatch yields a role-less token Core answers with a 403 and no
+      # explanation.
+      ROLES_CLAIM_NAME: ${ROLES_CLAIM_NAME:-roles}
+
+      # The toolset and apps mappings and the pre-registered client list, as JSON documents. Compose
+      # interpolates them like any other value, so the JSON has to be quoted on the way in
+      # and the model parses it. A mapping that a startup check refuses fails the
+      # container's start with the reason.
+      TOOLSETS: ${TOOLSETS:-{}}
+      APPS: ${APPS:-{}}
+      PRE_REGISTERED_CLIENTS: ${PRE_REGISTERED_CLIENTS:-{}}
+
+      # Client-metadata document fetches: the allowlist, the explicit User-Agent the
+      # origin's bot protection requires, and the fetch's bounds.
+      GATEWAY_CIMD_ALLOWED_ORIGINS: ${GATEWAY_CIMD_ALLOWED_ORIGINS:-https://claude.ai}
+      GATEWAY_CIMD_USER_AGENT: ${GATEWAY_CIMD_USER_AGENT:-dial-mcp-gateway/0.1 (+mcp-signin)}
+      GATEWAY_CIMD_CONNECT_TIMEOUT_SECONDS: ${GATEWAY_CIMD_CONNECT_TIMEOUT_SECONDS:-5}
+      GATEWAY_CIMD_TOTAL_TIMEOUT_SECONDS: ${GATEWAY_CIMD_TOTAL_TIMEOUT_SECONDS:-10}
+      GATEWAY_CIMD_MAX_DOCUMENT_BYTES: ${GATEWAY_CIMD_MAX_DOCUMENT_BYTES:-65536}
+      GATEWAY_CIMD_CACHE_TTL_SECONDS: ${GATEWAY_CIMD_CACHE_TTL_SECONDS:-300}
+      GATEWAY_CIMD_CACHE_MAX_ENTRIES: ${GATEWAY_CIMD_CACHE_MAX_ENTRIES:-256}
+      GATEWAY_CIMD_MAX_CONCURRENT_FETCHES: ${GATEWAY_CIMD_MAX_CONCURRENT_FETCHES:-8}
+
+      # Abuse bounds.
+      GATEWAY_FLOWS_MAX_LIVE: ${GATEWAY_FLOWS_MAX_LIVE:-10000}
+      GATEWAY_RATE_PER_SOURCE_PER_MINUTE: ${GATEWAY_RATE_PER_SOURCE_PER_MINUTE:-30}
+      GATEWAY_RATE_GLOBAL_PER_MINUTE: ${GATEWAY_RATE_GLOBAL_PER_MINUTE:-600}
+      # The resource-path segment-count cap: the front door addresses resources by their
+      # Core resource path (one or more segments), where the one-segment name vocabulary
+      # bounded depth by construction. It joins the 900-byte decoded path cap.
+      RESOURCE_PATH_MAX_SEGMENTS: ${RESOURCE_PATH_MAX_SEGMENTS:-32}
+      GATEWAY_FORM_MAX_BODY_BYTES: ${GATEWAY_FORM_MAX_BODY_BYTES:-16384}
+      AUDIT_FACT_MAX_LENGTH: ${AUDIT_FACT_MAX_LENGTH:-256}
+
+      # The custody key that seals the identity provider's session refresh token into the
+      # gateway's own refresh token, as a JSON object with exactly one key-id -> base64 key
+      # entry. Required: the model refuses an unset, empty, or multi-active keyset. This is
+      # the compat (flat) spelling — one active env-sourced entry, no retained entries. The
+      # structured spelling, with per-entry source/ref/role and retained entries, is the
+      # rotation shape and is named in `docs/gateway-configuration.md`; mixing the two
+      # spellings in one document refuses startup.
+      GATEWAY_CUSTODY_KEYS: ${GATEWAY_CUSTODY_KEYS:-{}}
+      GATEWAY_CUSTODY_PROVIDER_TOKEN_MAX_BYTES: ${GATEWAY_CUSTODY_PROVIDER_TOKEN_MAX_BYTES:-4096}
+
+      # Dynamic client registration (off by default; the store stays dormant while off).
+      DCR_ENABLED: ${DCR_ENABLED:-false}
+      DCR_STORE_PATH: ${DCR_STORE_PATH:-/data/dcr-registrations.json}
+      DCR_MAX_REGISTRATIONS: ${DCR_MAX_REGISTRATIONS:-1024}
+      DCR_MAX_BODY_BYTES: ${DCR_MAX_BODY_BYTES:-8192}
+      DCR_MAX_REDIRECT_URIS: ${DCR_MAX_REDIRECT_URIS:-8}
+      DCR_MAX_REDIRECT_URI_LENGTH: ${DCR_MAX_REDIRECT_URI_LENGTH:-512}
+      DCR_MAX_CLIENT_NAME_LENGTH: ${DCR_MAX_CLIENT_NAME_LENGTH:-256}
+
+      # IdP-grade secret material, injected at run time. Never baked into the image.
+      #
+      # The signing key is the compat (singular) spelling: one active env-sourced entry,
+      # the no-rotation shape. The structured `GATEWAY_SIGNING_KEYS` is the multiply-entry
+      # rotation shape (per-entry source/ref/role, with retained entries); configuring
+      # both the singular and the structured setting refuses startup naming both, so an
+      # empty structured value here leaves the singular one authoritative.
+      GATEWAY_SIGNING_KEY: ${GATEWAY_SIGNING_KEY:-}
+      GATEWAY_SIGNING_KEYS: ${GATEWAY_SIGNING_KEYS:-}
+
+      # The IdP client secret's second delivery spelling: a path to a read-only mounted
+      # file carrying the secret. Exactly one of this and `IDP_CLIENT_SECRET` is
+      # configured; both set refuses startup naming both, and an empty value here means
+      # the environment spelling above is the one in force.
+      IDP_CLIENT_SECRET_FILE: ${IDP_CLIENT_SECRET_FILE:-}
+    volumes:
+      # The one piece of gateway state that outlives a restart: the DCR registration
+      # store, at the path `DCR_STORE_PATH` names.
+      #
+      # A bind mount rather than a named volume so the file is plainly on the host: an
+      # operator recovering from a corrupt store renames it aside by path, and a lost
+      # store is visible as a missing file rather than as a Docker-managed volume.
+      #
+      # The save attempts an owner-only file mode, best-effort: where the mounted
+      # filesystem implements POSIX permission changes the file ends up readable only by
+      # the image's uid (10001), so the host directory must be writable by that uid; where
+      # it does not (a Windows host path reaches the container as 9p/DrvFs, where `chmod`
+      # is refused), the gateway logs a warning naming the path and the save proceeds — a
+      # registration is never refused for the mode. The store holds no secret, and its
+      # integrity is the host or volume owner's boundary either way.
+      - ./data:/data
+    healthcheck:
+      # Liveness only, matching the endpoint's own contract: the probe answers whether
+      # this process is up, and would misreport a working gateway as down if it depended
+      # on Core or the identity provider.
+      #
+      # Python is used rather than curl or wget because the slim base image ships
+      # neither, and installing one to run a probe would enlarge the image that holds
+      # the deployment's signing key.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:8091/healthz", timeout=5)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - instance
+
+  # The front router: the single public origin harnesses see. It splits the
+  # authorization surface to the gateway and the MCP data paths — the toolset path and the
+  # apps path — straight to Core.
+  #
+  # **The pod shape.** The router does not own a network identity: it joins the gateway's
+  # network namespace (`network_mode: "service:mcp-signin-gateway"`), which is compose's
+  # spelling of the pod's shared localhost. Two consequences the rest of the stack depends
+  # on:
+  #
+  # 1. The router reaches the gateway at `127.0.0.1:8091` — sibling localhost. The
+  #    gateway's port is therefore unreachable from the host and from outside networks,
+  #    and no container outside the pod can open a connection the router never accepted.
+  #    The port stays name-routable on the deployment's own instance network
+  #    (`mcp-signin-gateway:8091`): Core fetches the gateway's JWKS there, so that
+  #    reachability is required, not a leak — the instance network is the deployment's own
+  #    trust domain, distinct from the host and the outside. That is what makes the router
+  #    the sole authority for the forwarded client address the gateway's per-source rate
+  #    limit counts against.
+  # 2. The published public port moves to the namespace-owning service (the gateway
+  #    above): a shared-namespace pair publishes the namespace, and compose attaches
+  #    `ports:` to the service that owns it. The router carries no `ports:` mapping.
+  #
+  # A gateway-only recreate no longer drops the router's upstream: the pair share one
+  # namespace, so restarting the gateway restarts the namespace the router listens in
+  # (see the quirk check in this change's evidence).
+  mcp-signin-router:
+    image: nginx:1.27-alpine
+    network_mode: "service:mcp-signin-gateway"
+    volumes:
+      # The routing map is the router's whole configuration; it lives in this repository
+      # and is mounted read-only.
+      - ./router/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      mcp-signin-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8090/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+networks:
+  # The DIAL instance's own compose network. The instance defines no explicit network,
+  # so its default network is named after the project; the name is a setting rather than
+  # a literal so a differently-named deployment needs no edit here.
+  instance:
+    external: true
+    name: ${DIAL_COMPOSE_NETWORK:-dial-instance_default}

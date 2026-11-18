@@ -1,0 +1,27 @@
+=== step 1: discovery through the front door ===
+  resource  http://localhost:8090/dial/notion/mcp
+  servers   ["http://localhost:8090"]
+=== step 2: /dial/authorize through the front door ===
+  status    302 -> keycloak:8443
+  client    dial-mcp-proxy
+  scope     profile email
+  offline   relayed offline_access: no
+=== step 3: the identity provider's login page ===
+  hop 1: the login page rendered (keycloak:8443)
+=== step 4: the human signs in ===
+  open this URL in a browser and sign in:
+  https://keycloak:8443/realms/dial/protocol/openid-connect/auth?response_type=code&client_id=dial-mcp-proxy&redirect_uri=http%3A%2F%2Flocalhost%3A8090%2Fdial%2Fcallback%2Fidp&scope=profile+email&state=GOkKCtntL7my7NdoSLPaKg&code_challenge=R5Lwem3ehDw-fSP7lRwsGDWOEyWCOet9zc8PmkIWeS4&code_challenge_method=S256
+  after the sign-in the browser is redirected through the gateway and lands
+  on a URL that fails to load (nothing is listening there) - that is expected.
+  Paste the URL the browser landed on and press Enter.
+Traceback (most recent call last):
+  File "<repo>/scripts\probe_end_to_end_interactive.py", line 786, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "<repo>/scripts\probe_end_to_end_interactive.py", line 737, in main
+    pasted = collect_pasted_url(login_url)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>/scripts\probe_end_to_end_interactive.py", line 260, in collect_pasted_url
+    raise ChainError("login", "no pasted URL: the input was empty")
+probe_end_to_end.ChainError: login: no pasted URL: the input was empty
+final URL:
