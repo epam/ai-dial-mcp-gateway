@@ -1,0 +1,20 @@
+  registered checkpoint-deny-drive: client_id <redacted len=22 sha256=86008de7fce2>
+  login page rendered at keycloak:8443
+  credential submitted -> HTTP 302
+  hop 1: HTTP 200 -> <none>
+  DECISION PAGE rendered; it showed:
+    flow_id = l5LfzkC4-lDj1RUK-YcqHQ
+    client_shown = CvoBsWOKu1D72-pq3faLwg
+    resource_shown = skills-demo
+    redirect_uri_shown = http://127.0.0.1:8773/callback
+  consent POST action=deny -> HTTP 400 location=<none>
+  re-running the denied flow for the same client (the registry must be unwritten)...
+  login page rendered at keycloak:8443
+  credential submitted -> HTTP 302
+  hop 1: HTTP 200 -> <none>
+  DECISION PAGE rendered; it showed:
+    flow_id = zDfu1uMN7p1QoQewY1loRw
+    client_shown = CvoBsWOKu1D72-pq3faLwg
+    resource_shown = skills-demo
+    redirect_uri_shown = http://127.0.0.1:8773/callback
+=== result === {'deny_run': {'landed': 'decision-page', 'facts': {'flow_id': 'l5LfzkC4-lDj1RUK-YcqHQ', 'client_shown': 'CvoBsWOKu1D72-pq3faLwg', 'resource_shown': 'skills-demo', 'redirect_uri_shown': 'http://127.0.0.1:8773/callback'}, 'decision_page_text': 'Approve checkpoint-deny-drive Approve access for checkpoint-deny-drive? checkpoint-deny-drive (client id CvoBsWOKu1D72-pq3faLwg ) is asking to use the DIAL app skills-demo as you. If you approve, the sign-in code will be delivered to http://127.0.0.1:8773/callback . This is the first time this client has asked. Approving records your decision for this client, so future sign-ins from it will not ask again. Approve Deny', 'consent_status': 400, 'consent_location': None, 'consent_refusal_page': True, 'refusal_page_text': "Sign-in could not complete Sign-in could not complete you declined to let this client act as you. Nothing was changed, and no sign-in code was issued. Start the sign-in again from your tool if you change your mind Go back to your tool and start the sign-in again. Nothing was changed. If it keeps happening, ask your DIAL administrator to check the sign-in gateway's logs."}, 'deny_rerun': {'landed': 'decision-page', 'facts': {'flow_id': 'zDfu1uMN7p1QoQewY1loRw', 'client_shown': 'CvoBsWOKu1D72-pq3faLwg', 'resource_shown': 'skills-demo', 'redirect_uri_shown': 'http://127.0.0.1:8773/callback'}, 'decision_page_text': 'Approve checkpoint-deny-drive Approve access for checkpoint-deny-drive? checkpoint-deny-drive (client id CvoBsWOKu1D72-pq3faLwg ) is asking to use the DIAL app skills-demo as you. If you approve, the sign-in code will be delivered to http://127.0.0.1:8773/callback . This is the first time this client has asked. Approving records your decision for this client, so future sign-ins from it will not ask again. Approve Deny'}}

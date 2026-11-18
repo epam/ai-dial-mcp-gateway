@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-10-18
+goal: "Prove the MCP sign-in gateway design end to end: gateway service, nginx
+  front routing, Core/Keycloak configuration, and PoC C's five acceptance
+  criteria on a real harness"

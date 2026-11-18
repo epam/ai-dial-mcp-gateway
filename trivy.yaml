@@ -1,4 +1,4 @@
-# Trivy configuration file
+# Trivy configuration file, picked up by the image scan in CI
 # https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
 db:
   no-progress: true

@@ -1,0 +1,103 @@
+[1/11] negative control — Core's own challenge
+  request   GET http://localhost:8081/v1/toolset/notion/mcp  (direct to Core, outside the router)
+  status    401
+  challenge 'Bearer resource_metadata="http://localhost:8081/.well-known/oauth-protected-resource/v1/toolset/notion/mcp"'
+  verdict   control red — Core's own challenge names its own metadata
+
+[2/11] query string survives the routing
+  request   POST http://localhost:8090/dial/notion/mcp?sessionId=<probe-id>
+  token     <redacted len=1170 sha256=1c6c92c997e9>
+  status    401
+  request   GET http://localhost:8090/dial/notion/mcp?sessionId=<probe-id>-get
+  status    401
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e'
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e'
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e-get'
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e-get'
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e-get'
+  core log  request.uri='/v1/toolset/notion/mcp?sessionId=probe-44f79577821e-get'
+  verdict   green — the parameter reached Core unchanged, on both methods
+
+[3/11] flat AS metadata through the router
+  request   GET http://localhost:8090/.well-known/oauth-authorization-server
+  status    200
+  issuer    http://localhost:8090
+  authorization_endpoint   http://localhost:8090/dial/authorize
+  token_endpoint           http://localhost:8090/dial/token
+  jwks_uri                 http://localhost:8090/dial/jwks.json
+  verdict   green — the flat metadata is served, on the public origin
+
+[4/11] per-toolset PRM through the router
+  request   GET http://localhost:8090/.well-known/oauth-protected-resource/dial/notion/mcp
+  status    200
+  resource  http://localhost:8090/dial/notion/mcp
+  servers   ['http://localhost:8090']
+  kind      absent
+  verdict   green — the toolset's metadata is served on the public origin
+
+[5/11] data-path 401 rewritten to the gateway's challenge
+  request   GET http://localhost:8090/dial/notion/mcp  (no Authorization header)
+  status    401
+  challenges ['Bearer resource_metadata="http://localhost:8090/.well-known/oauth-protected-resource/dial/notion/mcp"']
+  resource_metadata  http://localhost:8090/.well-known/oauth-protected-resource/dial/notion/mcp
+  verdict   green — the 401 names the gateway's metadata, not Core's
+
+[6/11] gateway paths reachable through the front door
+  request   GET http://localhost:8090/dial/authorize  (the authorization endpoint, no usable parameters)
+  status    400
+  error     'invalid_request'
+  request   POST http://localhost:8090/dial/token  (the token endpoint, no usable parameters)
+  status    400
+  error     'invalid_request'
+  verdict   green — both paths answer as the gateway, not as Core
+
+[7/11] consent action route reachable through the front door
+  request   POST http://localhost:8090/dial/consent  (an unknown flow id, no cookie)
+  status    400
+  content-type 'text/html; charset=utf-8'
+  verdict   green — the consent route answers as the gateway, not as Core
+
+[8/11] apps PRM through the router
+  request   GET http://localhost:8090/.well-known/oauth-protected-resource/apps/skills-demo/mcp
+  status    200
+  resource  http://localhost:8090/apps/skills-demo/mcp
+  scopes    []
+  verdict   green — the app's metadata is served on the public origin
+
+[9/11] apps data-path 401 rewritten to the apps challenge
+  request   GET http://localhost:8090/apps/skills-demo/mcp  (no Authorization header)
+  status    401
+  challenges ['Bearer resource_metadata="http://localhost:8090/.well-known/oauth-protected-resource/apps/skills-demo/mcp"']
+  resource_metadata  http://localhost:8090/.well-known/oauth-protected-resource/apps/skills-demo/mcp
+  verdict   green — the apps 401 names the apps metadata, not the toolset's
+
+[10/11] query string survives the apps routing
+  request   POST http://localhost:8090/apps/skills-demo/mcp?sessionId=<probe-id>
+  status    200
+  request   GET http://localhost:8090/apps/skills-demo/mcp?sessionId=<probe-id>-get
+  status    200
+  verdict   green — the parameter reached Core unchanged, on both methods
+
+[11/11] status paths dropped to Core's own 401
+  request   GET http://localhost:8090/dial/notion/status
+  status    401
+  challenges []
+  request   GET http://localhost:8090/apps/notion/status
+  status    401
+  challenges []
+  verdict   green — both status paths fall through to Core's own 401, with no gateway challenge
+
+=== battery verdict ===
+  pass      negative control — Core's own challenge
+  pass      query string survives the routing
+  pass      flat AS metadata through the router
+  pass      per-toolset PRM through the router
+  pass      data-path 401 rewritten to the gateway's challenge
+  pass      gateway paths reachable through the front door
+  pass      consent action route reachable through the front door
+  pass      apps PRM through the router
+  pass      apps data-path 401 rewritten to the apps challenge
+  pass      query string survives the apps routing
+  pass      status paths dropped to Core's own 401
+
+all 11 probes passed

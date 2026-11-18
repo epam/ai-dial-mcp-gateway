@@ -1,0 +1,21 @@
+=== step 1: discovery through the front door ===
+  resource  http://localhost:8090/dial/notion/mcp
+  servers   ["http://localhost:8090"]
+=== step 2: /dial/authorize through the front door ===
+  status    302 -> keycloak:8443
+  client    dial-mcp-proxy
+  scope     profile email
+=== step 3: the identity provider's login form ===
+  credentials submitted -> HTTP 302
+  hop 2: the consent/attribution decision page rendered
+=== step 4: the consent/attribution decision page ===
+  flow      <redacted len=22 sha256=d66590d23d45>
+  action    approve
+  response  HTTP 200
+  page      the display interstitial — continues to https://mcp.notion.com/authorize
+
+=== boundary ===
+  the approve advanced the flow to the upstream authorization page:
+  completing it needs a real provider account this probe does not hold.
+  The checkpoint mechanics are proven; the upstream leg is not.
+

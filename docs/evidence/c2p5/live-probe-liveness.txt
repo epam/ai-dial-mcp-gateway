@@ -1,0 +1,8 @@
+origin=http://localhost:8090 slow_client_id=https://httpbin.org/delay/5
+slow_origin_hold=5.0s
+control /healthz: samples=['0.1250s', '0.0150s', '0.0000s']
+[PASS] control: worst=0.1250s
+during the held-open leg: /healthz 200 in 0.0000s
+[PASS] healthz answers during a slow outbound leg: status=200 duration=0.0000s budget=1.2500s
+[INFO] the slow leg answered 400 in 7.22s (the fetch was held for ~5.0s)
+VERDICT: PASS

@@ -19,4 +19,5 @@ jobs:
       trivy-severity: "CRITICAL,HIGH,MEDIUM,LOW"
       trivy-severity-for-sarif: "CRITICAL,HIGH,MEDIUM,LOW"
       python-version: "3.12"
+      python-package-manager: "uv"
     secrets: inherit

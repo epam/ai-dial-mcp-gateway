@@ -1,0 +1,25 @@
+=== the authorization-server metadata (/.well-known/oauth-authorization-server) ===
+  registration_endpoint  http://localhost:8090/dial/register
+  verdict: green — the registration endpoint is advertised
+=== the refusal branch: POST /dial/register with no redirect_uris ===
+  status                 400
+  error                  invalid_request
+  error_description      redirect_uris is required and must list at least one URI; without it no authorization request could be validated for this client
+  verdict: green — the registration was refused
+=== the registration: POST /dial/register with a loopback redirect_uri ===
+  client_id              <redacted len=22 sha256=d95d04434e09>
+=== the typed sweep: RFC 7591 §3.2.1 response members ===
+  negative control       no violation
+  client_id              str    <redacted len=22 sha256=d95d04434e09>
+  client_id_issued_at    int    1794059629
+  client_name            str    "group8-dcr-probe"
+  grant_types            list   ["authorization_code"]
+  redirect_uris          list   ["http://127.0.0.1:8768/callback"]
+  response_types         list   ["code"]
+  token_endpoint_auth_method str    "none"
+  verdict: green — every member carries its RFC 7591 §3.2.1 JSON type
+  recorded               dcr_client.json (gitignored)
+  verdict: green — one registration accepted, no secret issued
+
+=== probe verdict ===
+  the surface is in its expected state (enabled)
