@@ -27,4 +27,5 @@ jobs:
       trivy-severity-for-sarif: "CRITICAL,HIGH,MEDIUM,LOW"
       promote: ${{ github.event_name == 'workflow_dispatch' && inputs.promote }}
       python-version: "3.12"
+      python-package-manager: "uv"
     secrets: inherit
